@@ -31,7 +31,6 @@ import { v4 as uuidv4 } from 'uuid';
 import User, { USERNAME_COLLATION } from '../models/User.js';
 import mongoose from 'mongoose';
 import Game from './classes/Game.js';
-import shuffle from '../utils/shuffle.js';
 import setCorsHeaders from '../serverUtils/setCorsHeaders.js';
 import { getActivePlayerCount, getPlatformDistribution } from '../serverUtils/playerCounts.js';
 
@@ -571,18 +570,43 @@ function nextEventPlayerName(game) {
   return 'Player ' + game.eventNextNumber;
 }
 
-// Host's "Shuffle numbers": random 1..N over everyone but the host, so the
-// host can re-randomize seating/order before starting. Waiting lobbies only.
-function shuffleEventPlayerNumbers(game) {
-  const ids = Object.keys(game.players).filter((pid) => !game.players[pid].host);
-  shuffle(ids).forEach((pid, i) => {
-    const name = 'Player ' + (i + 1);
-    game.players[pid].username = name;
-    const live = players.get(pid);
-    if (live) live.username = name;
-  });
-  game.eventNextNumber = ids.length;
-  game.sendStateUpdate();
+// Waiting room (no game codes): players who named themselves and are not in
+// a game. Clients re-send eventWait every few seconds while waiting, so an
+// entry not refreshed in EVENT_WAIT_TTL_MS (disconnect, closed tab) drops out
+// on its own. Hosts of private waiting lobbies get the list and pull players in.
+const EVENT_WAIT_TTL_MS = 15000;
+const eventWaiting = new Map(); // player id -> last eventWait timestamp
+
+function eventWaitingPlayers() {
+  const now = Date.now();
+  const list = [];
+  for (const [pid, at] of eventWaiting) {
+    const p = players.get(pid);
+    if (!p || now - at > EVENT_WAIT_TTL_MS) { eventWaiting.delete(pid); continue; }
+    if (p.gameId || p.inQueue) continue;
+    list.push({ id: pid, username: p.username });
+  }
+  return list.sort((a, b) => a.username.localeCompare(b.username));
+}
+
+function sendEventWaitingLists() {
+  const list = eventWaitingPlayers();
+  const payload = JSON.stringify(list);
+  for (const game of games.values()) {
+    if (game.public || game.is2v2Lobby || game.state !== 'waiting') continue;
+    const hostId = Object.keys(game.players).find((pid) => game.players[pid].host);
+    const host = hostId && players.get(hostId);
+    if (!host || host.lastEventWaitingPayload === payload) continue;
+    host.lastEventWaitingPayload = payload;
+    host.send({ type: 'eventWaitingList', players: list });
+  }
+}
+
+function cleanEventName(name) {
+  if (typeof name !== 'string') return null;
+  const clean = name.replace(/\s+/g, ' ').trim().slice(0, 30);
+  if (!clean || chatFilter.isProfane(clean)) return null;
+  return clean;
 }
 
 // Mid-signup accounts (Google linked, username not chosen yet) must not enter
@@ -1096,6 +1120,8 @@ if (process.env.MAINTENANCE_SECRET) {
 const bannedIps = new Set();
 const ipConnectionCount = new Map();
 const duelRequestsLast10 = new Map();
+
+if (EVENT_MODE) safeInterval('eventWaiting', 2000, sendEventWaitingLists);
 
 safeInterval('duelReqReset', 10000, () => {
   duelRequestsLast10.clear();
@@ -2192,7 +2218,11 @@ app.ws('/wg', {
           game.disableEmotes = true;
         }
         games.set(gameId, game);
-        if (EVENT_MODE) player.username = 'Host';
+        if (EVENT_MODE) {
+          player.username = 'Host';
+          player.lastEventWaitingPayload = null; // new lobby: resend the waiting list
+          eventWaiting.delete(player.id);
+        }
         game.addPlayer(player, true);
         if (!is2v2Lobby) {
           // initialize with default options
@@ -2433,13 +2463,6 @@ app.ws('/wg', {
         });
       }
 
-      if (json.type === 'shufflePlayerNumbers' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
-        const game = games.get(player.gameId);
-        if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
-        if (!game.players[player.id]?.host) return;
-        shuffleEventPlayerNumbers(game);
-      }
-
       // Event build: the host relabels a player to match the bracket
       // (e.g. "Seed 7 - Juan (G10)"). Waiting lobbies only, so names never
       // change mid-match or on a results screen.
@@ -2449,12 +2472,36 @@ app.ws('/wg', {
         if (!game.players[player.id]?.host) return;
         const target = game.players[json.playerId];
         if (!target || typeof json.name !== 'string') return;
-        const name = json.name.replace(/\s+/g, ' ').trim().slice(0, 30);
-        if (!name || chatFilter.isProfane(name)) return;
+        const name = cleanEventName(json.name);
+        if (!name) return;
         target.username = name;
         const live = players.get(json.playerId);
         if (live) live.username = name;
         game.sendStateUpdate();
+      }
+
+      // Event build waiting room: a player (not in a game) announces their
+      // name and that they're ready to be pulled into a match.
+      if (json.type === 'eventWait' && EVENT_MODE && !player.gameId) {
+        const name = cleanEventName(json.name);
+        if (!name) {
+          player.send({ type: 'eventWaitRejected' });
+          return;
+        }
+        player.username = name;
+        eventWaiting.set(player.id, Date.now());
+      }
+
+      // Host pulls a waiting player into their private waiting lobby.
+      if (json.type === 'eventPull' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
+        const game = games.get(player.gameId);
+        if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
+        if (!game.players[player.id]?.host) return;
+        const target = players.get(json.playerId);
+        if (!target || !eventWaiting.has(target.id) || target.gameId || target.inQueue) return;
+        eventWaiting.delete(target.id);
+        game.addPlayer(target);
+        sendEventWaitingLists();
       }
 
       // Event build: a player's game tab went hidden during a round. Only the

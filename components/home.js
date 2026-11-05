@@ -25,6 +25,7 @@ import { getPlatform } from "@/components/utils/getPlatform";
 import { HIDE_ACCOUNT_UI, neutralGateKey } from "@/components/utils/accountUi";
 import { EVENT_MODE, getEventHostKey } from "@/components/utils/eventMode";
 import EventScoreboard from "./eventScoreboard";
+import EventWaitingScreen from "./eventWaitingScreen";
 import { duckAudio, setMusicAllowed, setMusicPlaylist, playSfx, preloadSfx, refreshVolumesFromStorage } from "@/components/utils/audio";
 import deriveTeamEndFallback from "@/components/utils/teamDuelEndFallback";
 import getMyTeam from "@/components/utils/getMyTeam";
@@ -391,7 +392,9 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
     // Background music plays only while the game surface is mounted — every
     // route that renders Home (/, lang roots, /daily) gets it, standalone
     // pages (/leaderboard, /map, /user, ...) never do. Unmount fades it out.
+    // Event build: no background music (sound effects stay).
     useEffect(() => {
+        if (EVENT_MODE) return;
         setMusicAllowed(true);
         return () => setMusicAllowed(false);
     }, []);
@@ -2196,7 +2199,8 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                     const isUSLocale = locale && locale.startsWith('en-US');
                     const isUKLocale = locale && locale.startsWith('en-GB');
 
-                    if (isUSTimezone || isUKTimezone || isUSLocale || isUKLocale) {
+                    // Event build: always start in metric.
+                    if (!EVENT_MODE && (isUSTimezone || isUKTimezone || isUSLocale || isUKLocale)) {
                         system = "imperial";
                     }
                 } catch (e) {
@@ -2777,12 +2781,14 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
             sendEvent("multiplayer_shuffle_teams")
         }
 
-        if (action === "renamePlayer" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {
-            ws.send(JSON.stringify({ type: "renamePlayer", playerId: args[0], name: args[1] }))
+        if (action === "eventPull" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {
+            ws.send(JSON.stringify({ type: "eventPull", playerId: args[0] }))
+            // Optimistic: drop them from the list until the server's next update.
+            setMultiplayerState((prev) => ({ ...prev, eventWaiting: (prev.eventWaiting || []).filter((p) => p.id !== args[0]) }))
         }
 
-        if (action === "shufflePlayerNumbers" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {
-            ws.send(JSON.stringify({ type: "shufflePlayerNumbers" }))
+        if (action === "renamePlayer" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {
+            ws.send(JSON.stringify({ type: "renamePlayer", playerId: args[0], name: args[1] }))
         }
 
         if (action === "setPlayerTeam" && args[0] && (args[1] === 'a' || args[1] === 'b')
@@ -3042,6 +3048,11 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                 // Translated toast (the provider has no `text`).
                 toast(data.message === 'uac' ? text('userAlreadyConnected') : data.message, { type: 'error' });
 
+            } else if (data.type === "eventWaitingList") {
+                setMultiplayerState((prev) => ({ ...prev, eventWaiting: data.players }));
+            } else if (data.type === "eventWaitRejected") {
+                toast(text("eventNameRejected"), { type: 'error', theme: "dark" });
+                setMultiplayerState((prev) => ({ ...prev, eventWaitRejectedAt: Date.now() }));
             } else if (data.type === "game") {
                 // A match (or private game) started — we're no longer waiting on a
                 // queue ack, so retire the watchdog.
@@ -5296,7 +5307,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
     // the daily About, not the home one.
     const staticAboutContent = initialScreen === 'daily' ? ABOUT_DAILY : !initialScreen ? ABOUT_HOME : null;
     const aboutContent = screen === 'daily' ? ABOUT_DAILY : staticAboutContent;
-    const showAboutPanel = !!aboutContent && !isApp && !inCoolMathGames && !inGameDistribution
+    const showAboutPanel = !EVENT_MODE && !!aboutContent && !isApp && !inCoolMathGames && !inGameDistribution
         && !inPoki && !inSixX && !process.env.NEXT_PUBLIC_SCHOOLGUESSR;
     // worldguessr.com/#about opens the panel: a linkable URL for the prose
     // without a second page competing with the homepage for the same query.
@@ -6034,6 +6045,12 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                             {/* THE MENU (styles/homeMenu.css): one mode per line with an
                                                 outline glyph, thin rules between the groups. Every handler
                                                 and gate below is the one the old text link had. */}
+                                            {/* Event build, player side: no codes — name + wait
+                                                for the host to pull you into a match. */}
+                                            {EVENT_MODE && getEventHostKey() === null ? (
+                                                <EventWaitingScreen ws={ws} connected={!!multiplayerState?.connected}
+                                                    rejectedAt={multiplayerState?.eventWaitRejectedAt} />
+                                            ) : (
                                             <div className="home__menu">
                                                 {!EVENT_MODE && <>
                                                 <div className="home__menu__group">
@@ -6143,6 +6160,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                                 </div>
                                                 </>}
                                             </div>
+                                            )}
                                         </>
                                     )}
 

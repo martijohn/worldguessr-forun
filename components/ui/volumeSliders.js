@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from '@/components/useTranslations';
 import { getMusicVolume, setMusicVolume, getSfxVolume, setSfxVolume, playSfx } from '@/components/utils/audio';
+import { EVENT_MODE } from '@/components/utils/eventMode';
 
 // The music + SFX volume rows, shared by the full settings page and the
 // party-lobby sound modal. Local mirror (0-100) of the audio manager's
@@ -18,6 +19,8 @@ export default function VolumeSliders({ rowClassName = "settingsModalInner" }) {
         <>
             {/* Bare range inputs on purpose — g2_input is select/checkbox
                 chrome (same precedent as mapView's timer slider). */}
+            {/* Event build has no background music, so no music slider. */}
+            {!EVENT_MODE && (
             <div className={rowClassName}>
                 <label htmlFor="musicVolume">{text("musicVolume")}: </label>
                 <input type="range" id="musicVolume" min="0" max="100" step="1"
@@ -26,6 +29,7 @@ export default function VolumeSliders({ rowClassName = "settingsModalInner" }) {
                     onChange={(e) => { const v = parseInt(e.target.value, 10); setMusicVol(v); setMusicVolume(v / 100); }} />
                 <span style={{ minWidth: '48px', textAlign: 'right', alignSelf: 'center' }}>{musicVol}%</span>
             </div>
+            )}
 
             <div className={rowClassName}>
                 <label htmlFor="sfxVolume">{text("sfxVolume")}: </label>
