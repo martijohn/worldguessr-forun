@@ -23,6 +23,8 @@ import trackVisibleTime from "@/components/utils/visibleTime";
 import { useMultiplayer, initialMultiplayerState } from "@/components/multiplayer/MultiplayerProvider";
 import { getPlatform } from "@/components/utils/getPlatform";
 import { HIDE_ACCOUNT_UI, neutralGateKey } from "@/components/utils/accountUi";
+import { EVENT_MODE, getEventHostKey } from "@/components/utils/eventMode";
+import EventScoreboard from "./eventScoreboard";
 import { duckAudio, setMusicAllowed, setMusicPlaylist, playSfx, preloadSfx, refreshVolumesFromStorage } from "@/components/utils/audio";
 import deriveTeamEndFallback from "@/components/utils/teamDuelEndFallback";
 import getMyTeam from "@/components/utils/getMyTeam";
@@ -1894,7 +1896,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
             // session-verify round trip: hidden navbar, GrowthBook fetch, and
             // a tutorial that starts then gets torn down when verify lands.
             const hasStoredAccount = !!window.localStorage.getItem("wg_secret");
-            if (onboarding && onboarding === "done") {
+            if (EVENT_MODE || (onboarding && onboarding === "done")) {
                 setOnboardingCompleted(true)
 
 
@@ -2689,6 +2691,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
             ws.send(JSON.stringify({
                 type: "createPrivateGame",
                 ...(intent === "2v2" ? { mode: "2v2" } : {}),
+                ...(EVENT_MODE ? { hostKey: getEventHostKey() } : {}),
             }));
             // Parties open the options modal right away so hosts pick their
             // settings first (2v2 staging has no options to edit).
@@ -2758,6 +2761,10 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
         if (action === "shuffleTeams" && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting" && multiplayerState?.gameData?.teamGame) {
             ws.send(JSON.stringify({ type: "shuffleTeams" }))
             sendEvent("multiplayer_shuffle_teams")
+        }
+
+        if (action === "shufflePlayerNumbers" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {
+            ws.send(JSON.stringify({ type: "shufflePlayerNumbers" }))
         }
 
         if (action === "setPlayerTeam" && args[0] && (args[1] === 'a' || args[1] === 'b')
@@ -5431,6 +5438,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                 Google Adivinar", the guess button, SV attribution) instead of
                 using the meta description. Snippet-only; indexing unaffected. */}
             <main className={`home`} id="main" data-nosnippet="">
+                <EventScoreboard multiplayerState={multiplayerState} />
 
                 {/* Daily challenge rules are fixed for everyone (no NMPZ, road
                     labels on). gameOptions still holds whatever the last
@@ -6009,6 +6017,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                                 outline glyph, thin rules between the groups. Every handler
                                                 and gate below is the one the old text link had. */}
                                             <div className="home__menu">
+                                                {!EVENT_MODE && <>
                                                 <div className="home__menu__group">
                                                     <ModeItem className="home__mode--singleplayer" icon={<IoCompassOutline />} label={text("singleplayer")}
                                                         onClick={() => {
@@ -6088,7 +6097,9 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                                 </div>
 
                                                 <div className="home__menu__hr"></div>
+                                                </>}
                                                 <div className="home__menu__group">
+                                                    {(!EVENT_MODE || getEventHostKey() !== null) && (
                                                     <ModeItem icon={<IoPersonAddOutline />} label={text("createGame")} disabled={maintenance} onClick={() => {
                                                         if (!ws || !multiplayerState?.connected) {
                                                             setConnectionErrorModalShown(true);
@@ -6097,6 +6108,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
 
                                                         navSlideOutThen(() => handleMultiplayerAction("createLobby", "party"));
                                                     }} />
+                                                    )}
                                                     <ModeItem icon={<IoLogInOutline />} label={text("joinGame")} disabled={maintenance} onClick={() => {
                                                         if (!ws || !multiplayerState?.connected) {
                                                             setConnectionErrorModalShown(true);
@@ -6106,10 +6118,12 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                                     }} />
                                                 </div>
 
+                                                {!EVENT_MODE && <>
                                                 <div className="home__menu__hr"></div>
                                                 <div className="home__menu__group">
                                                     <DailyMenuItem session={session} onClick={() => enterDailyMode()} />
                                                 </div>
+                                                </>}
                                             </div>
                                         </>
                                     )}
@@ -6145,7 +6159,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                 {/* EMBED_SOCIAL_LINKS re-opens Discord / YouTube on DuckMath (a Poki
                                     variant, so inPoki is true there). Leaderboard stays off: it is a
                                     root-absolute route that 404s on the nested zip path. */}
-                                {!isApp && !inCoolMathGames && !inGameDistribution && ((!inPoki && !inSixX) || EMBED_SOCIAL_LINKS) && (
+                                {!EVENT_MODE && !isApp && !inCoolMathGames && !inGameDistribution && ((!inPoki && !inSixX) || EMBED_SOCIAL_LINKS) && (
                                     <>
                                         {!process.env.NEXT_PUBLIC_SCHOOLGUESSR && (
                                             <Link target="_blank" href={"https://discord.gg/ADw47GAyS5"}><button className="g2_hover_effect home__squarebtn gameBtn g2_container discord" aria-label="Discord"><FaDiscord className="home__squarebtnicon" /></button></Link>
@@ -6177,7 +6191,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                     Its own gates, not the social block's: those
                                     hide for the app and CrazyGames, and the map
                                     picker is wanted in both. */}
-                                {onboardingCompleted && !inPoki && !inSixX && !process.env.NEXT_PUBLIC_COOLMATH
+                                {onboardingCompleted && !EVENT_MODE && !inPoki && !inSixX && !process.env.NEXT_PUBLIC_COOLMATH
                                     && !process.env.NEXT_PUBLIC_GAMEDISTRIBUTION && (
                                     <button className="g2_hover_effect home__squarebtn gameBtn g2_container_full" aria-label={text("communityMaps")} title={text("communityMaps")} onClick={() => setMapModal(true)}><FaMapMarkedAlt className="home__squarebtnicon" /></button>
                                 )}
