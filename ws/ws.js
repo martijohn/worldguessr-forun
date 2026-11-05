@@ -31,6 +31,7 @@ import { v4 as uuidv4 } from 'uuid';
 import User, { USERNAME_COLLATION } from '../models/User.js';
 import mongoose from 'mongoose';
 import Game from './classes/Game.js';
+import shuffle from '../utils/shuffle.js';
 import setCorsHeaders from '../serverUtils/setCorsHeaders.js';
 import { getActivePlayerCount, getPlatformDistribution } from '../serverUtils/playerCounts.js';
 
@@ -556,6 +557,32 @@ function joinGameByCode(code, onFull, onInvalid, onSuccess) {
     }
   }
   onInvalid();
+}
+
+// School/club competition mode (pairs with the NEXT_PUBLIC_EVENT web build).
+// Party members are named "Player 1..N" in join order (the host is "Host"),
+// and when EVENT_HOST_KEY is set only a client sending that key may create a
+// game. Off by default: nothing below changes the normal site.
+const EVENT_MODE = process.env.EVENT_MODE === 'true';
+const EVENT_HOST_KEY = process.env.EVENT_HOST_KEY || '';
+
+function nextEventPlayerName(game) {
+  game.eventNextNumber = (game.eventNextNumber || 0) + 1;
+  return 'Player ' + game.eventNextNumber;
+}
+
+// Host's "Shuffle numbers": random 1..N over everyone but the host, so the
+// host can re-randomize seating/order before starting. Waiting lobbies only.
+function shuffleEventPlayerNumbers(game) {
+  const ids = Object.keys(game.players).filter((pid) => !game.players[pid].host);
+  shuffle(ids).forEach((pid, i) => {
+    const name = 'Player ' + (i + 1);
+    game.players[pid].username = name;
+    const live = players.get(pid);
+    if (live) live.username = name;
+  });
+  game.eventNextNumber = ids.length;
+  game.sendStateUpdate();
 }
 
 // Mid-signup accounts (Google linked, username not chosen yet) must not enter
@@ -2112,6 +2139,14 @@ app.ws('/wg', {
           return;
         }
 
+        if (EVENT_MODE) {
+          if (json.mode === '2v2') return;
+          if (EVENT_HOST_KEY && json.hostKey !== EVENT_HOST_KEY) {
+            player.send({ type: 'toast', key: 'Only the event host can create games', toastType: 'error' });
+            return;
+          }
+        }
+
         // 2v2 staging needs a team-capable client (rollout gate: pre-team
         // bundles and the mobile app don't announce teamSupport in verify).
         // Normal parties stay open to everyone. Sentence-as-key: this toast is
@@ -2157,6 +2192,7 @@ app.ws('/wg', {
           game.disableEmotes = true;
         }
         games.set(gameId, game);
+        if (EVENT_MODE) player.username = 'Host';
         game.addPlayer(player, true);
         if (!is2v2Lobby) {
           // initialize with default options
@@ -2207,6 +2243,7 @@ app.ws('/wg', {
         const game = games.get(player.gameId);
         if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
         if (!game.players[player.id]?.host) return;
+        if (EVENT_MODE && json.enabled === true) return; // event lobbies are Classic only
         // Rollout gate: the party may have formed as a normal lobby, so members
         // on pre-team clients can be sitting in it. Remove them BEFORE the mode
         // flips (applyTeamConfig assigns teams to whoever remains) — the
@@ -2391,7 +2428,49 @@ app.ws('/wg', {
             playersInQueue.delete(player.id);
           }
           if (current) current.removePlayer(player, true);
+          if (EVENT_MODE && !game.public) player.username = nextEventPlayerName(game);
           game.addPlayer(player);
+        });
+      }
+
+      if (json.type === 'shufflePlayerNumbers' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
+        const game = games.get(player.gameId);
+        if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
+        if (!game.players[player.id]?.host) return;
+        shuffleEventPlayerNumbers(game);
+      }
+
+      // Event build: the host relabels a player to match the bracket
+      // (e.g. "Seed 7 - Juan (G10)"). Waiting lobbies only, so names never
+      // change mid-match or on a results screen.
+      if (json.type === 'renamePlayer' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
+        const game = games.get(player.gameId);
+        if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
+        if (!game.players[player.id]?.host) return;
+        const target = game.players[json.playerId];
+        if (!target || typeof json.name !== 'string') return;
+        const name = json.name.replace(/\s+/g, ' ').trim().slice(0, 30);
+        if (!name || chatFilter.isProfane(name)) return;
+        target.username = name;
+        const live = players.get(json.playerId);
+        if (live) live.username = name;
+        game.sendStateUpdate();
+      }
+
+      // Event build: a player's game tab went hidden during a round. Only the
+      // host is told (sticky toast); judges decide whether it's a violation.
+      if (json.type === 'eventTabAway' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
+        const game = games.get(player.gameId);
+        if (game.public || game.state !== 'guess') return;
+        const me = game.players[player.id];
+        if (!me || me.host) return;
+        const now = Date.now();
+        if (now - (player.lastTabAwayAt || 0) < 3000) return;
+        player.lastTabAwayAt = now;
+        const hostId = Object.keys(game.players).find((pid) => game.players[pid].host);
+        players.get(hostId)?.send({
+          type: 'toast', key: 'eventTabAway', name: me.username, round: game.curRound,
+          toastType: 'warning', autoClose: false, closeOnClick: true,
         });
       }
 

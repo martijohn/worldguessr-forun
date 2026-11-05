@@ -7,6 +7,7 @@ import UsernameWithFlag from './utils/usernameWithFlag';
 import { getLeague } from './utils/leagues';
 import { copyPartyLink, SHARES_CODE_ONLY } from './utils/partyLink';
 import { asset } from '@/lib/basePath';
+import { EVENT_MODE, eventPlayerNumber } from './utils/eventMode';
 import Modal from './ui/Modal';
 
 // The one lobby card for every private pre-game screen. A party waiting room
@@ -71,6 +72,11 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
   const players = pending
     ? [{ id: 'self', username: myName, countryCode: null, host: true }]
     : (gameData?.players || []);
+  // Event build: list Host first, then Player 1..N by number, so the host's
+  // Shuffle numbers visibly reorders the roster.
+  const rosterPlayers = EVENT_MODE
+    ? [...players].sort((a, b) => (b.host - a.host) || (eventPlayerNumber(a.username) - eventPlayerNumber(b.username)))
+    : players;
   // Pending shell: myId must match the placeholder row's 'self' id or the
   // "(You)" tag never renders on the creator's own row.
   const myId = gameData?.myId ?? (pending ? 'self' : undefined);
@@ -168,6 +174,17 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
         )}
         {host && !pending && !is2v2 && p.id !== myId && (
           <>
+          {EVENT_MODE && gameData?.state === 'waiting' && (
+            <button
+              className="party-lobby__kick"
+              aria-label={text("renamePlayer")}
+              title={text("renamePlayer")}
+              onClick={() => {
+                const name = window.prompt(text("renamePlayer"), p.username);
+                if (name && name.trim()) handleAction("renamePlayer", p.id, name.trim());
+              }}
+            ><FaPen /></button>
+          )}
           <button
             className="party-lobby__kick party-lobby__makehost"
             aria-label={text("makeHost")}
@@ -343,6 +360,16 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
                 onClick={() => handleAction("shuffleTeams")}
               ><FaShuffle /> {text("shuffleTeams")}</button>
             )}
+            {EVENT_MODE && !teamGame && host && !pending && gameData?.state === 'waiting' && (
+              <button
+                className="party-lobby__edit-btn"
+                // The roster's negative glow-relief margin overlaps this row;
+                // stack above it so the whole button stays clickable.
+                style={{ position: 'relative', zIndex: 1 }}
+                disabled={players.length < 3}
+                onClick={() => handleAction("shufflePlayerNumbers")}
+              ><FaShuffle /> {text("shuffleNumbers")}</button>
+            )}
             <span className="party-lobby__count">
               {/* Always show the cap when the server sent one ("3/200") so
                   the party limit is visible. Empty-seat placeholders still
@@ -387,7 +414,7 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
             </>
           ) : (
             <div className="party-lobby__roster">
-              {players.map((p) => renderPlayerRow(p))}
+              {rosterPlayers.map((p) => renderPlayerRow(p))}
               {Array.from({ length: emptySeats }).map((_, i) => (
                 <div key={`empty-${i}`} className={`party-lobby__player party-lobby__player--empty ${teammateSearch ? 'party-lobby__player--searching' : ''}`}>
                   {teammateSearch && (

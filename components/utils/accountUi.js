@@ -14,6 +14,7 @@
 // is exactly how the daily-challenge sign-in CTAs shipped un-gated: each new
 // surface had to remember a rule nothing enforced.
 export const HIDE_ACCOUNT_UI =
+  process.env.NEXT_PUBLIC_EVENT === "true" ||
   process.env.NEXT_PUBLIC_COOLMATH === "true" ||
   process.env.NEXT_PUBLIC_POKI === "true" ||
   process.env.NEXT_PUBLIC_GAMEDISTRIBUTION === "true" ||

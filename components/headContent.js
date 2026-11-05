@@ -55,7 +55,8 @@ export default function HeadContent({ text, inCoolMathGames, inCrazyGames = fals
     // remove the term once confirmed.
     if (!window.location.search.includes("crazygames") && !process.env.NEXT_PUBLIC_POKI &&
   !process.env.NEXT_PUBLIC_COOLMATH && !process.env.NEXT_PUBLIC_GAMEDISTRIBUTION &&
-  !process.env.NEXT_PUBLIC_SCHOOLGUESSR && process.env.NEXT_PUBLIC_6X !== "true") {
+  !process.env.NEXT_PUBLIC_SCHOOLGUESSR && process.env.NEXT_PUBLIC_6X !== "true" &&
+  process.env.NEXT_PUBLIC_EVENT !== "true") {
 
 
   // start adinplay script
