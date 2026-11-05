@@ -360,16 +360,6 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
                 onClick={() => handleAction("shuffleTeams")}
               ><FaShuffle /> {text("shuffleTeams")}</button>
             )}
-            {EVENT_MODE && !teamGame && host && !pending && gameData?.state === 'waiting' && (
-              <button
-                className="party-lobby__edit-btn"
-                // The roster's negative glow-relief margin overlaps this row;
-                // stack above it so the whole button stays clickable.
-                style={{ position: 'relative', zIndex: 1 }}
-                disabled={players.length < 3}
-                onClick={() => handleAction("shufflePlayerNumbers")}
-              ><FaShuffle /> {text("shuffleNumbers")}</button>
-            )}
             <span className="party-lobby__count">
               {/* Always show the cap when the server sent one ("3/200") so
                   the party limit is visible. Empty-seat placeholders still
@@ -426,6 +416,32 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
             </div>
           )}
         </div>
+
+        {/* Event build: players wait on their own screen (no codes); the
+            host adds them to this match from here. */}
+        {EVENT_MODE && host && !pending && !is2v2 && gameData?.state === 'waiting' && (
+          <div className="party-lobby__section">
+            <div className="party-lobby__section-head">
+              <span className="party-lobby__section-label">{text("eventWaitingPlayers")}</span>
+              <span className="party-lobby__count">{(multiplayerState?.eventWaiting || []).length}</span>
+            </div>
+            <div className="party-lobby__roster">
+              {(multiplayerState?.eventWaiting || []).map((w) => (
+                <div key={w.id} className="party-lobby__player">
+                  <span className="party-lobby__player-name">{w.username}</span>
+                  <button
+                    className="party-lobby__edit-btn"
+                    disabled={partyFull}
+                    onClick={() => handleAction("eventPull", w.id)}
+                  ><FaUserPlus /> {text("eventAddPlayer")}</button>
+                </div>
+              ))}
+              {(multiplayerState?.eventWaiting || []).length === 0 && (
+                <p className="party-lobby__hint">{text("eventNoneWaiting")}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="party-lobby__footer">
           {host && is2v2 && !teammateSearch && (
