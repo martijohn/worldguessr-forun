@@ -2243,6 +2243,7 @@ app.ws('/wg', {
         const game = games.get(player.gameId);
         if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
         if (!game.players[player.id]?.host) return;
+        if (EVENT_MODE && json.enabled === true) return; // event lobbies are Classic only
         // Rollout gate: the party may have formed as a normal lobby, so members
         // on pre-team clients can be sitting in it. Remove them BEFORE the mode
         // flips (applyTeamConfig assigns teams to whoever remains) — the
@@ -2437,6 +2438,40 @@ app.ws('/wg', {
         if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
         if (!game.players[player.id]?.host) return;
         shuffleEventPlayerNumbers(game);
+      }
+
+      // Event build: the host relabels a player to match the bracket
+      // (e.g. "Seed 7 - Juan (G10)"). Waiting lobbies only, so names never
+      // change mid-match or on a results screen.
+      if (json.type === 'renamePlayer' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
+        const game = games.get(player.gameId);
+        if (game.public || game.is2v2Lobby || game.state !== 'waiting') return;
+        if (!game.players[player.id]?.host) return;
+        const target = game.players[json.playerId];
+        if (!target || typeof json.name !== 'string') return;
+        const name = json.name.replace(/\s+/g, ' ').trim().slice(0, 30);
+        if (!name || chatFilter.isProfane(name)) return;
+        target.username = name;
+        const live = players.get(json.playerId);
+        if (live) live.username = name;
+        game.sendStateUpdate();
+      }
+
+      // Event build: a player's game tab went hidden during a round. Only the
+      // host is told (sticky toast); judges decide whether it's a violation.
+      if (json.type === 'eventTabAway' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
+        const game = games.get(player.gameId);
+        if (game.public || game.state !== 'guess') return;
+        const me = game.players[player.id];
+        if (!me || me.host) return;
+        const now = Date.now();
+        if (now - (player.lastTabAwayAt || 0) < 3000) return;
+        player.lastTabAwayAt = now;
+        const hostId = Object.keys(game.players).find((pid) => game.players[pid].host);
+        players.get(hostId)?.send({
+          type: 'toast', key: 'eventTabAway', name: me.username, round: game.curRound,
+          toastType: 'warning', autoClose: false, closeOnClick: true,
+        });
       }
 
       if (json.type === 'startGameHost' && player.gameId && games.has(player.gameId)) {

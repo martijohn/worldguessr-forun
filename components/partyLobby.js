@@ -174,6 +174,17 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
         )}
         {host && !pending && !is2v2 && p.id !== myId && (
           <>
+          {EVENT_MODE && gameData?.state === 'waiting' && (
+            <button
+              className="party-lobby__kick"
+              aria-label={text("renamePlayer")}
+              title={text("renamePlayer")}
+              onClick={() => {
+                const name = window.prompt(text("renamePlayer"), p.username);
+                if (name && name.trim()) handleAction("renamePlayer", p.id, name.trim());
+              }}
+            ><FaPen /></button>
+          )}
           <button
             className="party-lobby__kick party-lobby__makehost"
             aria-label={text("makeHost")}

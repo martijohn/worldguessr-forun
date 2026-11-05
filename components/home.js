@@ -2319,6 +2319,20 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
         sendEvent("game_start", { mode: screen });
     }, [latLong, screen, welcomeOverlayShown, dailyPhase, multiplayerState?.gameData?.state]);
 
+    // Event build: tell the host when a player's game tab is hidden during a
+    // round (switching tabs/apps, minimizing). The server only forwards it in
+    // the guess phase and only to the host.
+    const eventTabWatch = EVENT_MODE && !!multiplayerState?.inGame && !multiplayerState?.gameData?.public
+        && !multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "guess";
+    useEffect(() => {
+        if (!eventTabWatch || !ws) return;
+        const onVis = () => {
+            if (document.visibilityState === "hidden") ws.send(JSON.stringify({ type: "eventTabAway" }));
+        };
+        document.addEventListener("visibilitychange", onVis);
+        return () => document.removeEventListener("visibilitychange", onVis);
+    }, [eventTabWatch, ws]);
+
     // Own-analytics session clock: visible-tab seconds, every mode and screen
     // (see visibleTime.js). Module-level latch makes re-mounts harmless.
     useEffect(() => {
@@ -2761,6 +2775,10 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
         if (action === "shuffleTeams" && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting" && multiplayerState?.gameData?.teamGame) {
             ws.send(JSON.stringify({ type: "shuffleTeams" }))
             sendEvent("multiplayer_shuffle_teams")
+        }
+
+        if (action === "renamePlayer" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {
+            ws.send(JSON.stringify({ type: "renamePlayer", playerId: args[0], name: args[1] }))
         }
 
         if (action === "shufflePlayerNumbers" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {

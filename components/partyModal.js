@@ -4,6 +4,7 @@ import { FaUserGroup } from "react-icons/fa6";
 import { useTranslation } from "./useTranslations";
 import Modal from "react-responsive-modal";
 import MapsModal from "./maps/mapsModal";
+import { EVENT_MODE } from "./utils/eventMode";
 
 export default function PartyModal({ onClose, ws, setWs, multiplayerError, multiplayerState, setMultiplayerState, session, handleAction, gameOptions, setGameOptions, shown, setSelectCountryModalShown, selectCountryModalShown }) {
     const { t: text } = useTranslation("common");
@@ -108,6 +109,19 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
         commitTime(current + delta);
     };
 
+
+    // Event build: one tap sets a bracket stage's rules (World map, moving
+    // allowed, Classic free-for-all). Still committed by Save like any edit.
+    const applyEventPreset = (rounds, time) => {
+        setLocalRounds(String(rounds));
+        setLocalTime(String(time));
+        setLocalTeamGame(false);
+        setGameOptions((prev) => ({ ...prev, nm: false, npz: false }));
+        setMultiplayerState(prev => ({
+            ...prev,
+            createOptions: { ...prev.createOptions, rounds, timePerRound: time, location: "all", displayLocation: "World" }
+        }));
+    };
 
     const isValidRoundTime = isTimerDisabled || (!isNaN(parseInt(localTime)) && parseInt(localTime) >= 10 && parseInt(localTime) <= 300);
 
@@ -224,6 +238,25 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                         sub-options. Buffered like everything else here and
                         committed on Save/close. Reuses the global party-lobby
                         segmented/checkbox/hint styles. */}
+                    {EVENT_MODE && (
+                        <div className="party-modal__setting">
+                            <label className="party-modal__label">{text("eventPresets")}</label>
+                            <div className="party-lobby__seg party-lobby__seg--block" role="group" aria-label={text("eventPresets")}>
+                                {[["eventPresetRound1", 3, 90], ["eventPresetRound2", 5, 90], ["eventPresetFinal", 5, 60]].map(([key, r, t]) => (
+                                    <button
+                                        key={key}
+                                        className={`party-lobby__seg-btn ${parseInt(localRounds) === r && parseInt(localTime) === t && !isTimerDisabled ? 'party-lobby__seg-btn--active' : ''}`}
+                                        onClick={() => applyEventPreset(r, t)}
+                                    >{text(key)}</button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Event build: Classic only — Team Duel would put the
+                        facilitator (host) on a team and can't split a 3-player
+                        Final. */}
+                    {!EVENT_MODE && (
                     <div className="party-modal__setting">
                         <label className="party-modal__label">{text("gameMode")}</label>
                         <div className="party-lobby__seg party-lobby__seg--block" role="group" aria-label={text("gameMode")}>
@@ -249,6 +282,7 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                             {localTeamGame ? text("teamDuelModeHint") : text("classicModeHint")}
                         </p>
                     </div>
+                    )}
 
                     {localTeamGame && (
                         <>
@@ -425,6 +459,9 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                     {/* Guests off = only signed-in accounts can join. Compact
                         one-liner (user ruling); the LOCK control lives on the
                         lobby card next to the game code, not here. */}
+                    {/* Event build: every player is a guest, so turning
+                        this off would kick the whole lobby. */}
+                    {!EVENT_MODE && (
                     <label className="party-lobby__checkbox">
                         <input
                             type="checkbox"
@@ -433,6 +470,7 @@ export default function PartyModal({ onClose, ws, setWs, multiplayerError, multi
                         />
                         <span>{text('allowGuests')}</span>
                     </label>
+                    )}
 
                     <div className="party-modal__divider" />
 
