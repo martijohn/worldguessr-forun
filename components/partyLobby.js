@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import NextImage from 'next/image';
 import { useTranslation } from '@/components/useTranslations';
-import { FaLink, FaUserPlus, FaBolt, FaPlay, FaCrown, FaPen, FaEye, FaEyeSlash, FaXmark, FaShuffle, FaChevronRight, FaChevronLeft, FaLock, FaLockOpen } from 'react-icons/fa6';
+import { FaLink, FaUserPlus, FaBolt, FaPlay, FaCrown, FaPen, FaEye, FaEyeSlash, FaXmark, FaShuffle, FaChevronRight, FaChevronLeft, FaLock, FaLockOpen, FaTrophy } from 'react-icons/fa6';
 import { toast } from 'react-toastify';
 import UsernameWithFlag from './utils/usernameWithFlag';
 import { getLeague } from './utils/leagues';
@@ -318,11 +318,20 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
             <div className="party-lobby__section-head">
               <span className="party-lobby__section-label">{text("settings")}</span>
               {host && (
-                <button
-                  className="party-lobby__edit-btn"
-                  disabled={generatingBlocked}
-                  onClick={onEditOptions}
-                ><FaPen /> {text("editOptions")}</button>
+                <span style={{ display: 'inline-flex', gap: 8 }}>
+                  {/* Event build: one tap to the bracket (new tab, so the
+                      lobby keeps running). */}
+                  {EVENT_MODE && (
+                    <a className="party-lobby__edit-btn" href="/bracket" target="_blank" rel="noopener" style={{ textDecoration: 'none' }}>
+                      <FaTrophy /> {text("eventBracket")}
+                    </a>
+                  )}
+                  <button
+                    className="party-lobby__edit-btn"
+                    disabled={generatingBlocked}
+                    onClick={onEditOptions}
+                  ><FaPen /> {text("editOptions")}</button>
+                </span>
               )}
             </div>
             <div className="party-lobby__chips">

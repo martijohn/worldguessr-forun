@@ -107,7 +107,7 @@ export default function Bracket() {
 
           {!s.seeds ? (
             <div style={{ display: 'grid', gap: 12 }}>
-              <p style={{ margin: 0, color: C.dim }}>Enter the 12 participants (e.g. "Juan Dela Cruz (G10)"), then draw the seeds.</p>
+              <p style={{ margin: 0, color: C.dim }}>Enter the 12 participants (e.g. &ldquo;Juan Dela Cruz (G10)&rdquo;), then draw the seeds.</p>
               <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
                 {s.names.map((n, i) => (
                   <input key={i} value={n} placeholder={`Participant ${i + 1}`} maxLength={30}
