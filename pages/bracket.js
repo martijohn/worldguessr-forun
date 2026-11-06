@@ -48,6 +48,7 @@ function Match({ title, a, b, winner, onPick }) {
 export default function Bracket() {
   const [s, setS] = useState(EMPTY);
   const [loaded, setLoaded] = useState(false);
+  const [podiumOpen, setPodiumOpen] = useState(false);
 
   useEffect(() => {
     try { const raw = localStorage.getItem(STORE); if (raw) setS({ ...EMPTY, ...JSON.parse(raw) }); } catch {}
@@ -85,6 +86,9 @@ export default function Bracket() {
       .sort((a, b) => b.score - a.score)
     : [];
   const tie = ranked.some((f, i) => i > 0 && f.score === ranked[i - 1].score);
+  // Podium once every remaining (non-DQ) finalist has a score and no tie.
+  const podiumReady = finalReady && !tie && ranked.length > 0
+    && ranked.length === finalists.filter((n) => !s.final[n]?.dq).length;
 
   const filled = s.names.filter((n) => n.trim()).length;
   const unique = new Set(s.names.map((n) => n.trim())).size === SIZE;
@@ -164,6 +168,9 @@ export default function Bracket() {
                       </div>
                     ))}
                     {tie && <p style={{ margin: 0, color: '#ffcc66' }}>Tied scores — play a tiebreaker match.</p>}
+                    {podiumReady && (
+                      <button style={{ ...btn, background: C.gold, borderColor: C.gold }} onClick={() => setPodiumOpen(true)}>Show podium</button>
+                    )}
                   </div>
                 )}
               </section>
@@ -171,7 +178,63 @@ export default function Bracket() {
           )}
         </div>
       </div>
+      {podiumOpen && podiumReady && <Podium ranked={ranked} onClose={() => setPodiumOpen(false)} />}
     </>
+  );
+}
+
+// Full-screen awards podium for the projector: 2nd | 1st | 3rd. Click, Space
+// or → reveals one place at a time (3rd, then 2nd, then the champion);
+// Esc closes.
+function Podium({ ranked, onClose }) {
+  const [step, setStep] = useState(0);
+  const n = ranked.length;
+  const done = step >= n;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === ' ' || e.key === 'ArrowRight' || e.key === 'Enter') { e.preventDefault(); setStep((v) => Math.min(n, v + 1)); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [n, onClose]);
+
+  const place = [
+    { label: '1st', title: 'Champion', color: C.gold, height: '44vh' },
+    { label: '2nd', title: '2nd place', color: '#9ca3af', height: '32vh' },
+    { label: '3rd', title: '3rd place', color: '#b87333', height: '24vh' },
+  ];
+  const shown = (i) => i >= n - step; // 3rd revealed first, champion last
+
+  return (
+    <div onClick={() => setStep((v) => Math.min(n, v + 1))} style={{
+      position: 'fixed', inset: 0, zIndex: 100, background: 'radial-gradient(ellipse at 50% 30%, #1d2a4a 0%, #0b1220 70%)',
+      color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end',
+      padding: '3vh 16px 0', boxSizing: 'border-box', cursor: done ? 'default' : 'pointer', userSelect: 'none',
+    }}>
+      <button aria-label="Close" onClick={(e) => { e.stopPropagation(); onClose(); }}
+        style={{ position: 'absolute', top: 16, right: 16, background: 'transparent', border: 'none', color: '#fff', fontSize: 32, cursor: 'pointer' }}>×</button>
+      <h1 style={{ margin: '0 0 auto', paddingTop: '2vh', fontSize: 'clamp(26px, 6vh, 64px)', textAlign: 'center' }}>GeoGuessr Event Winners</h1>
+      {!done && <p style={{ margin: '0 0 2vh', color: 'rgba(255,255,255,0.6)' }}>Click to reveal</p>}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'clamp(8px, 2vw, 28px)', width: '100%', maxWidth: 1100 }}>
+        {[1, 0, 2].filter((i) => i < n).map((i) => (
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 0 }}>
+            <div style={{
+              textAlign: 'center', marginBottom: '1.5vh', minHeight: '9vh', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
+              opacity: shown(i) ? 1 : 0, transform: shown(i) ? 'translateY(0)' : 'translateY(20px)', transition: 'opacity 0.6s, transform 0.6s',
+            }}>
+              <div style={{ fontSize: i === 0 ? 'clamp(22px, 5vh, 56px)' : 'clamp(18px, 3.6vh, 40px)', fontWeight: 800, overflowWrap: 'anywhere' }}>{ranked[i].name}</div>
+              <div style={{ fontSize: 'clamp(14px, 2.4vh, 26px)', color: 'rgba(255,255,255,0.75)' }}>{place[i].title} · {ranked[i].score.toLocaleString()} pts</div>
+            </div>
+            <div style={{
+              width: '100%', height: place[i].height, background: place[i].color, borderRadius: '12px 12px 0 0',
+              display: 'flex', justifyContent: 'center', paddingTop: '2vh', boxSizing: 'border-box',
+              fontSize: 'clamp(32px, 9vh, 110px)', fontWeight: 900, color: 'rgba(0,0,0,0.35)',
+            }}>{place[i].label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
