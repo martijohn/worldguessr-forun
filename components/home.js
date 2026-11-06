@@ -26,6 +26,7 @@ import { HIDE_ACCOUNT_UI, neutralGateKey } from "@/components/utils/accountUi";
 import { EVENT_MODE, getEventHostKey } from "@/components/utils/eventMode";
 import EventScoreboard from "./eventScoreboard";
 import EventWaitingScreen from "./eventWaitingScreen";
+import EventJudgePanel from "./eventJudgePanel";
 import { duckAudio, setMusicAllowed, setMusicPlaylist, playSfx, preloadSfx, refreshVolumesFromStorage } from "@/components/utils/audio";
 import deriveTeamEndFallback from "@/components/utils/teamDuelEndFallback";
 import getMyTeam from "@/components/utils/getMyTeam";
@@ -2323,15 +2324,16 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
         sendEvent("game_start", { mode: screen });
     }, [latLong, screen, welcomeOverlayShown, dailyPhase, multiplayerState?.gameData?.state]);
 
-    // Event build: tell the host when a player's game tab is hidden during a
-    // round (switching tabs/apps, minimizing). The server only forwards it in
-    // the guess phase and only to the host.
+    // Event build: report a player's game tab hiding (switching tabs/apps,
+    // minimizing) and coming back, for the judges' log. Watched for the whole
+    // match so a return during getready still closes the entry; the server
+    // only opens entries during a round.
     const eventTabWatch = EVENT_MODE && !!multiplayerState?.inGame && !multiplayerState?.gameData?.public
-        && !multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "guess";
+        && !multiplayerState?.gameData?.host;
     useEffect(() => {
         if (!eventTabWatch || !ws) return;
         const onVis = () => {
-            if (document.visibilityState === "hidden") ws.send(JSON.stringify({ type: "eventTabAway" }));
+            ws.send(JSON.stringify({ type: document.visibilityState === "hidden" ? "eventTabAway" : "eventTabBack" }));
         };
         document.addEventListener("visibilitychange", onVis);
         return () => document.removeEventListener("visibilitychange", onVis);
@@ -2781,6 +2783,10 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
             sendEvent("multiplayer_shuffle_teams")
         }
 
+        if (action === "eventDisqualify" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host) {
+            ws.send(JSON.stringify({ type: "eventDisqualify", playerId: args[0] }))
+        }
+
         if (action === "eventPull" && EVENT_MODE && multiplayerState?.inGame && multiplayerState?.gameData?.host && multiplayerState?.gameData?.state === "waiting") {
             ws.send(JSON.stringify({ type: "eventPull", playerId: args[0] }))
             // Optimistic: drop them from the list until the server's next update.
@@ -3048,6 +3054,8 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                 // Translated toast (the provider has no `text`).
                 toast(data.message === 'uac' ? text('userAlreadyConnected') : data.message, { type: 'error' });
 
+            } else if (data.type === "eventLog") {
+                setMultiplayerState((prev) => ({ ...prev, eventLog: data.entries }));
             } else if (data.type === "eventWaitingList") {
                 setMultiplayerState((prev) => ({ ...prev, eventWaiting: data.players }));
             } else if (data.type === "eventWaitRejected") {
@@ -5468,6 +5476,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                 using the meta description. Snippet-only; indexing unaffected. */}
             <main className={`home`} id="main" data-nosnippet="">
                 <EventScoreboard multiplayerState={multiplayerState} />
+                <EventJudgePanel multiplayerState={multiplayerState} onDisqualify={(id) => handleMultiplayerAction("eventDisqualify", id)} />
 
                 {/* Daily challenge rules are fixed for everyone (no NMPZ, road
                     labels on). gameOptions still holds whatever the last

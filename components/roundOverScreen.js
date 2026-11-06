@@ -23,6 +23,7 @@ import openInStreetView from './utils/openInStreetView';
 import SafeMapContainer from './SafeMapContainer';
 import { fitBoundsAtWholeZoom, flyToBoundsAtWholeZoom } from '@/lib/leafletWholeZoom';
 import { googleTileScale } from '@/lib/googleTileScale';
+import { EVENT_MODE } from '@/components/utils/eventMode';
 
 // Error-boundaried MapContainer (see SafeMapContainer): a partial leaflet load
 // throws "a.Map is not a constructor" during commit; without the boundary it
@@ -872,6 +873,9 @@ const GameSummary = ({
   // Cumulative-points party team mode (teamGame) vs the 2v2 HP model
   // (team2v2). Both are "team games" for grouping/pin purposes; only the
   // score presentation differs (totals vs damage hearts).
+  // Event build: the host only runs the game, so their end screen hides the
+  // personal score header.
+  const hostSpectating = EVENT_MODE && !!multiplayerState?.gameData?.host && !multiplayerState?.gameData?.public;
   const isCumulativeTeam = !!(data?.teamGame || multiplayerState?.gameData?.teamGame);
   // Fallback matches the server default ('closest', Game.js constructor) —
   // practically unreachable since every payload carries the field.
@@ -2266,6 +2270,8 @@ const GameSummary = ({
               );
             })()}
 
+            {/* Event build: the host spectates and has no score of their own. */}
+            {!hostSpectating && (<>
             <div
               className={`summary-score points-display ${pointsAnimating ? 'animating' : ''}`}
               style={{
@@ -2293,6 +2299,7 @@ const GameSummary = ({
             >
               {text("outOf")} {maxPoints} {text("points")}
             </div>
+            </>)}
 
             {/* {gameId && (
               <div className="game-id-container" style={{
@@ -2348,7 +2355,9 @@ const GameSummary = ({
 
         <div className={`rounds-container ${!mobileExpanded ? 'mobile-hidden' : ''}`} ref={roundsContainerRef}>
           {/* Show leaderboard for multiplayer games */}
-          {multiplayerState?.gameData && finalHistory[0]?.players && Object.keys(finalHistory[0].players).length > 1 && (
+          {/* Event build: the host never appears here and a disqualification can
+              leave a single player, whose result still needs to be shown. */}
+          {multiplayerState?.gameData && finalHistory[0]?.players && Object.keys(finalHistory[0].players).length > (EVENT_MODE ? 0 : 1) && (
             <>
               <h3 style={{ padding: '12px 20px', color: 'white', marginBottom: '0', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>{text("finalScores")}</h3>
               {renderLeaderboard(true)}

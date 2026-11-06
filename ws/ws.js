@@ -564,6 +564,7 @@ function joinGameByCode(code, onFull, onInvalid, onSuccess) {
 // game. Off by default: nothing below changes the normal site.
 const EVENT_MODE = process.env.EVENT_MODE === 'true';
 const EVENT_HOST_KEY = process.env.EVENT_HOST_KEY || '';
+const EVENT_REJOIN_GRACE_MS = 5 * 60 * 1000;
 
 function nextEventPlayerName(game) {
   game.eventNextNumber = (game.eventNextNumber || 0) + 1;
@@ -599,6 +600,63 @@ function sendEventWaitingLists() {
     if (!host || host.lastEventWaitingPayload === payload) continue;
     host.lastEventWaitingPayload = payload;
     host.send({ type: 'eventWaitingList', players: list });
+  }
+}
+
+// Judges' log (per match): tab-hidden spells, disconnects and DQs, pushed
+// live to the host. Software only flags; the judges decide.
+const EVENT_TAB_ALERT_MS = 3000;
+let eventLogSeq = 0;
+
+function eventHostOf(game) {
+  const hostId = Object.keys(game.players).find((pid) => game.players[pid].host);
+  return hostId ? players.get(hostId) : null;
+}
+
+function sendEventLog(game) {
+  eventHostOf(game)?.send({ type: 'eventLog', entries: game.eventLog || [] });
+}
+
+function eventLogPush(game, player, kind) {
+  const entry = { id: ++eventLogSeq, playerId: player.id, name: game.players[player.id]?.username ?? player.username,
+    round: game.curRound, kind, at: Date.now(), ms: null };
+  (game.eventLog ||= []).push(entry);
+  sendEventLog(game);
+  return entry;
+}
+
+// Close a player's open tab-hidden spell. dropIt: the spell was really the
+// start of a reload/disconnect (logged separately), so don't count it.
+function closeEventHidden(game, player, dropIt = false) {
+  const entry = player.eventHiddenEntry;
+  if (!entry) return;
+  clearTimeout(player.eventHiddenTimer);
+  player.eventHiddenEntry = null;
+  if (dropIt && Date.now() - entry.at < EVENT_TAB_ALERT_MS) {
+    game.eventLog = (game.eventLog || []).filter((e) => e !== entry);
+  } else {
+    entry.ms = Date.now() - entry.at;
+  }
+  sendEventLog(game);
+}
+
+function eventGameOf(player) {
+  const game = EVENT_MODE && player.gameId ? games.get(player.gameId) : null;
+  if (!game || game.public || game.is2v2Lobby) return null;
+  const me = game.players[player.id];
+  return me && !me.host ? game : null;
+}
+
+// Every 2s: close disconnect entries for players who came back (or were
+// dropped), so the log shows how long they were away.
+function sweepEventDisconnects() {
+  for (const p of players.values()) {
+    const entry = p.eventDisconnectEntry;
+    if (!entry || p.disconnected) continue;
+    entry.ms = Date.now() - entry.at;
+    p.eventDisconnectEntry = null;
+    const game = p.gameId ? games.get(p.gameId) : null;
+    if (game?.eventLog?.includes(entry)) sendEventLog(game);
   }
 }
 
@@ -1121,7 +1179,7 @@ const bannedIps = new Set();
 const ipConnectionCount = new Map();
 const duelRequestsLast10 = new Map();
 
-if (EVENT_MODE) safeInterval('eventWaiting', 2000, sendEventWaitingLists);
+if (EVENT_MODE) safeInterval('eventWaiting', 2000, () => { sendEventWaitingLists(); sweepEventDisconnects(); });
 
 safeInterval('duelReqReset', 10000, () => {
   duelRequestsLast10.clear();
@@ -2507,24 +2565,60 @@ app.ws('/wg', {
 
       // Event build: a player's game tab went hidden during a round. Only the
       // host is told (sticky toast); judges decide whether it's a violation.
-      if (json.type === 'eventTabAway' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
+      // Logged from the moment it's hidden; the host is alerted only if it
+      // stays hidden EVENT_TAB_ALERT_MS (a reload's brief hide never alerts).
+      if (json.type === 'eventTabAway' && eventGameOf(player)) {
+        const game = eventGameOf(player);
+        if (game.state !== 'guess' || player.eventHiddenEntry) return;
+        const entry = eventLogPush(game, player, 'hidden');
+        player.eventHiddenEntry = entry;
+        player.eventHiddenTimer = setTimeout(() => {
+          if (player.eventHiddenEntry !== entry || player.disconnected) return;
+          eventHostOf(game)?.send({
+            type: 'toast', key: 'eventTabAway', name: entry.name, round: entry.round,
+            toastType: 'warning', autoClose: false, closeOnClick: true,
+          });
+        }, EVENT_TAB_ALERT_MS);
+      }
+
+      if (json.type === 'eventTabBack' && eventGameOf(player)) {
+        closeEventHidden(eventGameOf(player), player);
+      }
+
+      // Host disqualifies a player: removed from the match, their rounds
+      // struck from the results, everyone told why. The bracket records the
+      // opponent advancing (the facilitator clicks it there).
+      if (json.type === 'eventDisqualify' && EVENT_MODE && player.gameId && games.has(player.gameId)) {
         const game = games.get(player.gameId);
-        if (game.public || game.state !== 'guess') return;
-        const me = game.players[player.id];
-        if (!me || me.host) return;
-        const now = Date.now();
-        if (now - (player.lastTabAwayAt || 0) < 3000) return;
-        player.lastTabAwayAt = now;
-        const hostId = Object.keys(game.players).find((pid) => game.players[pid].host);
-        players.get(hostId)?.send({
-          type: 'toast', key: 'eventTabAway', name: me.username, round: game.curRound,
-          toastType: 'warning', autoClose: false, closeOnClick: true,
-        });
+        if (game.public || game.is2v2Lobby || !game.players[player.id]?.host) return;
+        const targetId = json.playerId;
+        const seat = typeof targetId === 'string' ? game.players[targetId] : null;
+        if (!seat || seat.host) return;
+        const target = players.get(targetId);
+        if (target) {
+          closeEventHidden(game, target, true);
+          target.eventDisconnectEntry = null;
+        }
+        eventLogPush(game, target || { id: targetId, username: seat.username }, 'dq');
+        for (const round of game.roundHistory || []) {
+          if (round?.players) delete round.players[targetId];
+        }
+        for (const pid of Object.keys(game.players)) {
+          if (pid !== targetId) players.get(pid)?.send({ type: 'toast', key: 'eventPlayerDisqualified', name: seat.username, toastType: 'warning' });
+        }
+        if (target) {
+          target.send({ type: 'toast', key: 'eventDisqualifiedYou', toastType: 'error', autoClose: false });
+          game.removePlayer(target);
+        } else {
+          delete game.players[targetId];
+          game.sendAllPlayers({ type: 'player', id: targetId, action: 'remove' });
+        }
       }
 
       if (json.type === 'startGameHost' && player.gameId && games.has(player.gameId)) {
         const game = games.get(player.gameId);
         if (game.players[player.id].host) {
+          if (EVENT_MODE) { game.eventLog = []; sendEventLog(game); } // fresh log per match
           game.start(player);
         }
       }
@@ -2896,6 +2990,14 @@ app.ws('/wg', {
       player.disconnectTime = Date.now();
       player.disconnected = true;
       disconnectedPlayers.set(player.accountId??player.rejoinCode, player.id);
+
+      // Event judges' log: a disconnect mid-match (a reload's brief tab-hide
+      // that preceded it is folded into this entry, not counted twice).
+      const evGameDc = player.gameId ? eventGameOf(player) : null;
+      if (evGameDc && ['getready', 'guess'].includes(evGameDc.state)) {
+        closeEventHidden(evGameDc, player, true);
+        if (!player.eventDisconnectEntry) player.eventDisconnectEntry = eventLogPush(evGameDc, player, 'disconnect');
+      }
 
       // Post-game results: reflect the drop in teammates' Play Again counter
       // right away instead of after the 30s purge (livingTeamPlayAgain
@@ -4087,7 +4189,13 @@ try {
         disconnectedPlayers.delete(accountId);
         continue;
       }
-      if(Date.now() - player.disconnectTime > 30000) {
+      // Event build: a crashed or restarting school PC can take minutes to
+      // come back. Mid-match, hold their seat (host included, so the match
+      // isn't disbanded) for EVENT_REJOIN_GRACE_MS instead of 30s.
+      const evGame = EVENT_MODE && player.gameId ? games.get(player.gameId) : null;
+      const reconnectGraceMs = evGame && !evGame.public && ['getready', 'guess'].includes(evGame.state)
+        ? EVENT_REJOIN_GRACE_MS : 30000;
+      if(Date.now() - player.disconnectTime > reconnectGraceMs) {
         // Team rejoin exception (2v2 duels AND team parties): while the game
         // is still running and a teammate is still connected holding the
         // fort, keep the dropout rejoinable indefinitely — handleReconnect is
