@@ -227,12 +227,15 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
   // status line, host Find Match button) and must never drift between them.
   const queueingLabel = queueCountdown != null ? `${text("queueingIn", { s: queueCountdown })}…` : null;
 
+  // Event build: the host spectates, so only the others count toward starting.
+  const competitors = EVENT_MODE ? players.filter((p) => !p.host).length : players.length;
+
   // At most ONE status line, picked by priority.
   let status = null;
   if (queueingLabel && !host) status = queueingLabel;
   else if (!host) status = `${text("waitingForHostToStart")}...`;
   else if (is2v2 && players.length < 2 && !teammateSearch) status = text("twovtwoSoloHint");
-  else if (!is2v2 && !pending && players.length < 2) status = text("singlePlayerNeeded");
+  else if (!is2v2 && !pending && competitors < 2) status = text(EVENT_MODE && competitors === 0 ? "eventTwoPlayersNeeded" : "singlePlayerNeeded");
   else if (teamBlocked) status = text("teamNeedsPlayers");
   else if (!is2v2 && !pending && generatingBlocked) status = `${text("generating")}...`;
 
@@ -457,7 +460,7 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
               onClick={() => handleAction("cancelTeammateSearch")}
             >{text("cancel")}</button>
           )}
-          {host && !is2v2 && players.length >= 2 && !generatingBlocked && !teamBlocked && (
+          {host && !is2v2 && competitors >= 2 && !generatingBlocked && !teamBlocked && (
             <button
               className="gameBtn g2_green_button g2_button_style party-lobby__action"
               onClick={() => handleAction("startGameHost")}

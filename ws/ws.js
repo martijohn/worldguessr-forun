@@ -2207,6 +2207,7 @@ app.ws('/wg', {
         // game options / location generation entirely.
         const is2v2Lobby = json.mode === '2v2';
         const game = new Game(gameId, { is2v2Lobby });
+        if (EVENT_MODE) game.hostSpectates = true;
         // Comms are EXCLUSIVE everywhere chat exists (user ruling: never
         // both). Fresh parties default to chat (host can flip to emotes);
         // 2v2 staging has no host options and is chat-only, full stop.
