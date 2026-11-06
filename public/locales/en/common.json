@@ -948,6 +948,7 @@
   "eventNameRejected": "Please choose a different name",
   "eventWaitingPlayers": "Waiting players",
   "eventAddPlayer": "Add",
+  "eventTwoPlayersNeeded": "2 players needed to start",
   "eventNoneWaiting": "No players waiting yet",
   "renamePlayer": "Rename player",
   "eventTabAway": "{{name}} left the game tab (round {{round}})",

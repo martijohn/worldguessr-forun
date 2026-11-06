@@ -782,6 +782,8 @@ export default class Game {
       // Save each player's guess and calculated points for this round
       for (const playerId of Object.keys(this.players)) {
         const player = this.players[playerId];
+        // Spectating event host: not a competitor, keep them off the results.
+        if (this.hostSpectates && player.host) continue;
 
         if (player.guess) {
           // Player made a guess
@@ -841,7 +843,9 @@ export default class Game {
     for (const playerId of Object.keys(this.players)) {
       const player = this.players[playerId];
       player.guess = null;
-      player.final = false;
+      // Event build: the host only runs the game. Locked in from the start of
+      // every round, so they can't guess and nobody waits on them.
+      player.final = !!(this.hostSpectates && player.host);
       player.roundTimeTaken = null; // Reset time for new round
     }
     this.roundEndedAt = null; // Reset late guess buffer

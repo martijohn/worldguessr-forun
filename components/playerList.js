@@ -2,6 +2,7 @@ import { useTranslation } from '@/components/useTranslations'
 import { FaCrown } from 'react-icons/fa6';
 import UsernameWithFlag, { GLOW_LIGHT } from './utils/usernameWithFlag';
 import getMyTeam from './utils/getMyTeam';
+import { EVENT_MODE } from './utils/eventMode';
 
 // NOTE ON GLOWS: every row here is BLACK TEXT ON A WHITE CARD, so both name
 // sites pass GLOW_LIGHT. The dark variant is a neon tuned for the HUD's dark
@@ -19,7 +20,10 @@ export default function PlayerList({ multiplayerState, fadingOut }) {
   const { t: text } = useTranslation("common");
 
   // Copy before sorting — sorting in place would mutate React state (gameData.players).
-  const players = [...(multiplayerState?.gameData?.finalPlayers ?? multiplayerState?.gameData?.players ?? [])].sort((a, b) => b.score - a.score);
+  // Event build: the host spectates, so they're not ranked.
+  const players = [...(multiplayerState?.gameData?.finalPlayers ?? multiplayerState?.gameData?.players ?? [])]
+    .filter((p) => !(EVENT_MODE && p.host))
+    .sort((a, b) => b.score - a.score);
   const myId = multiplayerState?.gameData?.myId;
   const myIndex = players.findIndex(player => player.id === myId);
 
