@@ -23,6 +23,9 @@ const PATH_LANGS = { "/es": "es", "/fr": "fr", "/de": "de", "/ru": "ru" };
 export default function Document({ pathname }) {
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
   const backgroundUrl = `${basePath}${DEFAULT_BACKGROUND_PATH}`;
+  // Event build: the poster is shown almost undimmed; the menus sit on their
+  // own cards, so they stay readable without the normal site's 50% scrim.
+  const bgScrim = process.env.NEXT_PUBLIC_EVENT === 'true' ? 0 : 0.5;
 
   return (
     <Html lang={PATH_LANGS[pathname] || "en"} translate="no" className="notranslate" style={{ backgroundColor: '#000000' }}>
@@ -125,7 +128,7 @@ export default function Document({ pathname }) {
               left: 0;
               width: 100%;
               height: 100%;
-              background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
+              background: linear-gradient(rgba(0, 0, 0, ${bgScrim}), rgba(0, 0, 0, ${bgScrim})),
                           var(--site-bg) center/cover no-repeat,
                           var(--site-bg-lqip) center/cover no-repeat;
               z-index: 0;
@@ -151,14 +154,14 @@ export default function Document({ pathname }) {
               left: 0;
               width: 100%;
               height: 100%;
-              background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
+              background: linear-gradient(rgba(0, 0, 0, ${bgScrim}), rgba(0, 0, 0, ${bgScrim})),
                           var(--site-bg) center/cover no-repeat,
                           var(--site-bg-lqip) center/cover no-repeat;
               z-index: 0;
               pointer-events: none;
             }
             html.site-bg-swap body::before {
-              background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)),
+              background: linear-gradient(rgba(0, 0, 0, ${bgScrim}), rgba(0, 0, 0, ${bgScrim})),
                           var(--site-bg-next) center/cover no-repeat;
               /* An ANIMATION, not a transition: it has to run on the frame the
                  class lands, from a state this element does not otherwise have.

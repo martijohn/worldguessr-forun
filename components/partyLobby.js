@@ -262,6 +262,8 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
           )}
         </div>
 
+        {/* Event build: players join from the waiting list, never by code. */}
+        {!EVENT_MODE && (
         <div className="party-lobby__code-block">
           <div className="party-lobby__code-label-row">
             <span className="party-lobby__code-label">{text("gameCode")}</span>
@@ -309,6 +311,7 @@ export default function PartyLobby({ multiplayerState, handleAction, onEditOptio
             )}
           </div>
         </div>
+        )}
 
         {/* Party settings: labeled chips beginners can actually read, with the
             pencil in the section header. Hidden for 2v2: matchmade games use
