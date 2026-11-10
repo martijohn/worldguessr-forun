@@ -6024,7 +6024,10 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
 
                 {screen == "home" &&
                     <div className={`home__content g2_modal ${screen !== "home" ? "hidden" : "cshown"} `}>
-                        <div className={`g2_nav_ui ${navSlideOut ? 'g2_slide_out' : ''} ${onboardingCompleted !== true ? 'hide' : ''}`} >
+                        {/* Event build: no green wash over the poster; the logo and the
+                            waiting box carry their own cards. */}
+                        <div className={`g2_nav_ui ${navSlideOut ? 'g2_slide_out' : ''} ${onboardingCompleted !== true ? 'hide' : ''}`}
+                            style={EVENT_MODE ? { background: 'none' } : undefined}>
 
 
                             {onboardingCompleted === null ? (
@@ -6038,7 +6041,15 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                     {onboardingCompleted && (
 
                                         <>
-                                            <h1 className={`home__title g2_nav_title wg_font ${navSlideOut ? 'g2_slide_out' : ''}`}>WorldGuessr</h1>
+                                            <h1 className={`home__title g2_nav_title wg_font ${navSlideOut ? 'g2_slide_out' : ''}`}>
+                                                {/* Event build: the organizers' logo (white background removed),
+                                                    with a soft shadow to lift it off the busy poster. */}
+                                                {EVENT_MODE ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={asset('/event/logo.webp')} alt="UManistas" width={900} height={384}
+                                                        style={{ display: 'block', width: 'min(280px, 62vw)', height: 'auto', filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.95)) drop-shadow(0 0 1px rgba(0,0,0,0.95)) drop-shadow(0 2px 8px rgba(0,0,0,0.6))' }} />
+                                                ) : 'WorldGuessr'}
+                                            </h1>
 
                                             {/* <MaintenanceBanner /> */}
                                         </>
@@ -6153,6 +6164,8 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                                         navSlideOutThen(() => handleMultiplayerAction("createLobby", "party"));
                                                     }} />
                                                     )}
+                                                    {/* Event build: no codes; players use the waiting list. */}
+                                                    {!EVENT_MODE && (
                                                     <ModeItem icon={<IoLogInOutline />} label={text("joinGame")} disabled={maintenance} onClick={() => {
                                                         if (!ws || !multiplayerState?.connected) {
                                                             setConnectionErrorModalShown(true);
@@ -6160,6 +6173,7 @@ export default function Home({ initialScreen, dailyBootstrap, initialLocation = 
                                                         }
                                                         navSlideOutThen(() => handleMultiplayerAction("joinPrivateGame"));
                                                     }} />
+                                                    )}
                                                 </div>
 
                                                 {!EVENT_MODE && <>
