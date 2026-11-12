@@ -3,14 +3,18 @@ import { useEffect, useState } from 'react';
 import { EVENT_MODE } from '@/components/utils/eventMode';
 import shuffle from '@/utils/shuffle';
 
-// Event build only: the facilitator's 12-player bracket (single page, no
-// server — saved in this browser). Seeds 1-12 are drawn at random; Round 1 is
-// 1v2, 3v4 ... 11v12; Round 2 follows the bracket lines (W1v2 vs W3v4, ...);
-// the three Round 2 winners play one 3-player Final ranked by total score.
-// Disqualification = click the opponent as winner (they advance by default).
-const SIZE = 12;
-const STORE = 'wg_event_bracket_v1';
-const EMPTY = { names: Array(SIZE).fill(''), seeds: null, r1: Array(6).fill(null), r2: Array(3).fill(null), final: {} };
+// Event build only: the facilitator's 18-player bracket (single page, no
+// server — saved in this browser). Seeds 1-18 are drawn at random; Round 1 is
+// six 3-player games (seeds 1-3, 4-6 ... 16-18, top score advances); Round 2
+// follows the bracket lines 1v1 (W1 vs W2, W3 vs W4, W5 vs W6); the three
+// Round 2 winners play one 3-player Final ranked by total score.
+// Disqualification = click another player as winner (they advance by default).
+const SIZE = 18;
+const GROUP = 3; // players per Round 1 game
+const R1_GAMES = SIZE / GROUP; // 6
+// v2: the 12-player layout's saved state (v1) has a different shape.
+const STORE = 'wg_event_bracket_v2';
+const EMPTY = { names: Array(SIZE).fill(''), seeds: null, r1: Array(R1_GAMES).fill(null), r2: Array(3).fill(null), final: {} };
 
 const C = {
   bg: '#0b1220', card: 'rgba(255,255,255,0.06)', line: 'rgba(255,255,255,0.15)',
@@ -35,12 +39,17 @@ function Slot({ seedNo, name, won, lost, onClick }) {
   );
 }
 
-function Match({ title, a, b, winner, onPick }) {
+// One game: 2 players (Round 2) or 3 (Round 1). Click the winner; click them
+// again to undo.
+function Match({ title, players, winner, onPick }) {
+  const ready = players.every((pl) => pl.name);
   return (
     <div style={{ display: 'grid', gap: 6, padding: 10, borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.line}` }}>
       <div style={{ color: C.dim, fontSize: 13 }}>{title}</div>
-      <Slot {...a} won={winner === 0} lost={winner === 1} onClick={a.name && b.name ? () => onPick(winner === 0 ? null : 0) : null} />
-      <Slot {...b} won={winner === 1} lost={winner === 0} onClick={a.name && b.name ? () => onPick(winner === 1 ? null : 1) : null} />
+      {players.map((pl, k) => (
+        <Slot key={k} {...pl} won={winner === k} lost={winner != null && winner !== k}
+          onClick={ready ? () => onPick(winner === k ? null : k) : null} />
+      ))}
     </div>
   );
 }
@@ -63,7 +72,7 @@ export default function Bracket() {
 
   const seedOf = (name) => (s.seeds ? s.seeds.indexOf(name) + 1 : null);
   const p = (name) => ({ name, seedNo: name ? seedOf(name) : null });
-  const r1Winner = (i) => (s.seeds && s.r1[i] != null ? s.seeds[i * 2 + s.r1[i]] : null);
+  const r1Winner = (i) => (s.seeds && s.r1[i] != null ? s.seeds[i * GROUP + s.r1[i]] : null);
   const r2Pair = (j) => [r1Winner(j * 2), r1Winner(j * 2 + 1)];
   const r2Winner = (j) => (s.r2[j] != null ? r2Pair(j)[s.r2[j]] : null);
   const finalists = [0, 1, 2].map(r2Winner);
@@ -111,7 +120,7 @@ export default function Bracket() {
 
           {!s.seeds ? (
             <div style={{ display: 'grid', gap: 12 }}>
-              <p style={{ margin: 0, color: C.dim }}>Enter the 12 participants (e.g. &ldquo;Juan Dela Cruz (G10)&rdquo;), then draw the seeds.</p>
+              <p style={{ margin: 0, color: C.dim }}>Enter the {SIZE} participants (e.g. &ldquo;Juan Dela Cruz (G10)&rdquo;), then draw the seeds.</p>
               <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
                 {s.names.map((n, i) => (
                   <input key={i} value={n} placeholder={`Participant ${i + 1}`} maxLength={30}
@@ -128,18 +137,19 @@ export default function Bracket() {
           ) : (
             <div style={{ display: 'grid', gap: 20, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', alignItems: 'start' }}>
               <section style={{ display: 'grid', gap: 10 }}>
-                <h2 style={h2}>Round 1 · 3 rounds × 90s</h2>
-                {[0, 1, 2, 3, 4, 5].map((i) => (
-                  <Match key={i} title={`Match ${i + 1}: Seed ${i * 2 + 1} vs Seed ${i * 2 + 2}`}
-                    a={p(s.seeds[i * 2])} b={p(s.seeds[i * 2 + 1])} winner={s.r1[i]} onPick={(w) => pickR1(i, w)} />
+                <h2 style={h2}>Round 1 · 3 players per game · 3 rounds × 90s</h2>
+                {Array.from({ length: R1_GAMES }, (_, i) => (
+                  <Match key={i} title={`Game ${i + 1}: Seeds ${i * GROUP + 1}–${i * GROUP + GROUP}`}
+                    players={Array.from({ length: GROUP }, (_, k) => p(s.seeds[i * GROUP + k]))}
+                    winner={s.r1[i]} onPick={(w) => pickR1(i, w)} />
                 ))}
               </section>
               <section style={{ display: 'grid', gap: 10 }}>
                 <h2 style={h2}>Round 2 · 5 rounds × 90s</h2>
                 {[0, 1, 2].map((j) => {
                   const [a, b] = r2Pair(j);
-                  return <Match key={j} title={`Match ${j + 7}: W${j * 2 + 1} vs W${j * 2 + 2}`}
-                    a={p(a)} b={p(b)} winner={s.r2[j]} onPick={(w) => pickR2(j, w)} />;
+                  return <Match key={j} title={`Game ${R1_GAMES + j + 1}: W${j * 2 + 1} vs W${j * 2 + 2}`}
+                    players={[p(a), p(b)]} winner={s.r2[j]} onPick={(w) => pickR2(j, w)} />;
                 })}
               </section>
               <section style={{ display: 'grid', gap: 10 }}>
